@@ -1,0 +1,65 @@
+#!/usr/bin/python
+
+import configparser
+import os
+import requests
+import sys
+from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+
+
+def get_config(pkg, name):
+    """
+    Get configuration options for this script
+    """
+    config = configparser.SafeConfigParser()
+    conffiles = [
+        '/etc/{}.ini'.format(pkg),
+        os.path.expanduser('~/.{}.ini'.format(pkg)),
+        '{}.ini'.format(pkg),
+    ]
+    config.read(conffiles)
+    return config[name]
+
+
+def set_gauges(registry, url):
+    """
+    Pull data from the public forum.snapcraft.io (discourse) API to set
+    the number of topics and posts per category.
+    """
+    api_request = requests.get(url)
+    json_data = api_request.json()
+    posts_gauge = Gauge(
+        name='forum_snapcraft_io_posts_total',
+        documentation='Count of posts per category at forum.snapcraft.io',
+        labelnames=['category'],
+        registry=registry)
+    topics_gauge = Gauge(
+        name='forum_snapcraft_io_topics_total',
+        documentation='Count of topics per category at forum.snapcraft.io',
+        labelnames=['category'],
+        registry=registry)
+
+    for category in json_data['category_list']['categories']:
+        name = category['name']
+        post_count = category['post_count']
+        topic_count = category['topic_count']
+        posts_gauge.labels(name).set(post_count)
+        topics_gauge.labels(name).set(topic_count)
+
+
+if __name__ == '__main__':
+
+    pkg = 'snappy-kpi-scripts'
+    name = os.path.basename(sys.argv[0])
+    config = get_config(pkg, name)
+
+    registry = CollectorRegistry()
+    url = 'https://forum.snapcraft.io/categories.json'
+    try:
+        set_gauges(registry, url)
+    finally:
+        # if set_gauges bombed out for any reason, just upload blank data.
+        push_to_gateway(
+            config['push-gateway'],
+            job='forum.snapcraft.io',
+            registry=registry)

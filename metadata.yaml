@@ -1,0 +1,13 @@
+name: snappy-kpi-scripts
+summary: Scripts to gather snappy KPIs from external sources
+maintainers:
+ - Canonical IS <root@admin.canonical.com>
+description: |
+    Scripts to gather snappy KPIs from external sources.
+tags:
+  - layer
+subordinate: true
+requires:
+    juju-info:
+        scope: container
+        interface: juju-info

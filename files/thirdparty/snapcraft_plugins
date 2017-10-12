@@ -1,0 +1,143 @@
+#!/usr/bin/env python2
+
+"""Launchpad KPI metrics gatherer script.
+
+Gathers statistics of the plugins used in snapcraft.yaml files
+of snaps being built in Launchpad bugs
+
+Copyright (c) 2017 Canonical, Ltd.
+Authors: Leo Arias
+"""
+
+import collections
+import configparser
+import logging
+import os
+import sys
+import urllib2
+import urlparse
+
+from launchpadlib.launchpad import Launchpad
+from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+from xdg import BaseDirectory
+
+
+if '--debug' in sys.argv:
+    logging.basicConfig(level=logging.DEBUG)
+
+
+def main():
+    pkg = 'snappy-kpi-scripts'
+    name = os.path.basename(sys.argv[0])
+    config = get_config(pkg, name)
+    gateway = config['push-gateway']
+
+    if 'http_proxy' in config:
+        logging.info('Using http_proxy: %s', config['http_proxy'])
+        os.environ.setdefault('http_proxy', config['http_proxy'])
+    if 'https_proxy' in config:
+        logging.info('Using https_proxy: %s', config['https_proxy'])
+        os.environ.setdefault('https_proxy', config['https_proxy'])
+
+    registry = CollectorRegistry()
+    try:
+        gather_snapcraft_plugins(registry)
+    finally:
+        if '--debug' not in sys.argv:
+            # Disable proxy when connecting to Prometheus Pushgateway.
+            os.environ.pop('http_proxy', None)
+            os.environ.pop('https_proxy', None)
+
+            push_to_gateway(gateway, job=name, registry=registry)
+        else:  # Debugging enabled.
+            import pprint
+            pprint.pprint([(x.name, x.samples) for x in registry.collect()])
+
+
+def get_config(pkg, name):
+    """Find push gateway in config file."""
+    config = configparser.ConfigParser()
+    conffiles = [
+        '/etc/{}.ini'.format(pkg),
+        os.path.expanduser('~/.{}.ini'.format(pkg)),
+        '{}.ini'.format(pkg),
+    ]
+    config.read(conffiles)
+    return config[name]
+
+
+def gather_snapcraft_plugins(registry):
+    plugins = Gauge(
+        'snapcraft_plugins',
+        'Number of snapcraft plugins used in launchpad builders',
+        ['plugin_name'],
+        registry=registry,
+    )
+    github_urls = get_github_url_for_snaps_with_completed_builds()
+    count = collections.Counter()
+    for url in github_urls:
+        if '--debug' in sys.argv:
+            print url
+        count = sum(
+            (count, collections.Counter(get_plugin_count(url))),
+            collections.Counter())
+    for key in count.keys():
+        plugins.labels(key).set(count[key])
+
+
+def get_github_url_for_snaps_with_completed_builds():
+    cache_dir = os.path.join(
+        BaseDirectory.xdg_config_home, 'launchpadlib')
+    launchpad = Launchpad.login_anonymously(
+        'kpi_snapcraft_script', 'production', cache_dir, version='devel')
+
+    github_snaps = launchpad.snaps.findByURLPrefix(
+        url_prefix='https://github.com')
+    # TODO there are projects using branches other than master.
+    # Ask how to get the branch from launchpad. --elopio - 20170703
+    urls = []
+    for snap in github_snaps:
+        if '--debug' in sys.argv:
+            print snap
+        if snap.completed_builds.total_size > 0:
+            urls.append(snap.git_repository_url)
+
+    return urls
+
+
+def get_plugin_count(github_repo_url):
+    count = {}
+    repo = _get_repo_from_url(github_repo_url)
+    snapcraft_yaml_file = _get_snapcraft_yaml_file(repo)
+    if snapcraft_yaml_file:
+        for line in snapcraft_yaml_file:
+            line = line.strip()
+            if line.startswith('plugin: '):
+                plugin = line[8:]
+                if plugin in count:
+                    count[plugin] = count[plugin] + 1
+                else:
+                    count[plugin] = 1
+        snapcraft_yaml_file.close()
+    return count
+
+
+def _get_repo_from_url(github_repo_url):
+    parsed_url = urlparse.urlparse(github_repo_url)
+    return parsed_url.path[1:]
+
+
+def _get_snapcraft_yaml_file(github_repo):
+    paths = ['snapcraft.yaml', '.snapcraft.yaml', 'snap/snapcraft.yaml']
+    for path in paths:
+        url = 'https://raw.githubusercontent.com/{}/master/{}'.format(
+            github_repo, path)
+        try:
+            return urllib2.urlopen(url)
+        except urllib2.HTTPError as ex:
+            if ex.code != 404:  # Ignore "not found" errors.
+                raise
+
+
+if __name__ == '__main__':
+    main()

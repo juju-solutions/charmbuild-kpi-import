@@ -1,0 +1,51 @@
+#!/usr/bin/python
+
+from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+
+def get_config(pkg, name):
+    """
+    Get configuration options for this script
+    """
+    import configparser
+
+    config = configparser.SafeConfigParser()
+    conffiles = [
+        '/etc/{}.ini'.format(pkg),
+        os.path.expanduser('~/.{}.ini'.format(pkg)),
+        '{}.ini'.format(pkg),
+    ]
+    config.read(conffiles)
+    return config[name]
+
+def set_gauges(registry, url):
+    """
+    pull data from the public Docker Hub API to set the number of
+    pulls and stars
+    """
+    import requests
+    import json
+    api_request = requests.get(url).text
+    json_data = json.loads(api_request)
+    pulls_gauge = Gauge('dockerhub_snapcraft_pulls', 'pulls', registry=registry)
+    stars_gauge = Gauge('dockerhub_snapcraft_stars', 'stars', registry=registry)
+    pulls_gauge.set(json_data['pull_count'])
+    stars_gauge.set(json_data['star_count'])
+
+
+if __name__ == '__main__':
+    import os
+    import sys
+
+    pkg = 'snappy-kpi-scripts'
+    name = os.path.basename(sys.argv[0])
+    config = get_config(pkg, name)
+
+    registry = CollectorRegistry()
+    url = 'https://hub.docker.com/v2/repositories/snapcore/snapcraft'
+    try:
+        set_gauges(registry, url)
+    finally:
+        # if set_gauges bombed out for any reason, just upload blank data.
+        push_to_gateway(config['push-gateway'],
+                        job='dockerhub-data',
+                        registry=registry)

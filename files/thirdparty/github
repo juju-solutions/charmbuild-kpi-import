@@ -1,0 +1,69 @@
+#!/usr/bin/python
+
+from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+
+
+def get_config(pkg, name):
+    """
+    Get configuration options for this script
+    """
+    import configparser
+
+    config = configparser.SafeConfigParser()
+    conffiles = [
+        '/etc/{}.ini'.format(pkg),
+        os.path.expanduser('~/.{}.ini'.format(pkg)),
+        '{}.ini'.format(pkg),
+    ]
+    config.read(conffiles)
+    return config[name]
+
+
+def get_github_orgs(config):
+    from github import Github
+
+    g = Github(config['github-username'], config['github-password'])
+    ubuntu = g.get_organization('snapcore')
+    return ubuntu
+
+
+def set_gauges(registry, ubuntu):
+    forks_gauge = Gauge('github_repo_forks',
+                        'forks_count', ['repo'], registry=registry)
+    network_gauge = Gauge('github_repo_network',
+                          'network_count', ['repo'], registry=registry)
+    watchers_gauge = Gauge('github_repo_watchers',
+                           'watchers_count', ['repo'], registry=registry)
+    pull_request_gauge = Gauge('github_repo_pull_requests',
+                               'number of pull requests per repo',
+                               ['repo'], registry=registry)
+
+    for repo in ubuntu.get_repos():
+        # Set all of the integers github gives us for a given repo.
+        forks_gauge.labels(
+            {'repo': repo.name}).set(repo.forks_count)
+        network_gauge.labels(
+            {'repo': repo.name}).set(repo.network_count)
+        watchers_gauge.labels(
+            {'repo': repo.name}).set(repo.watchers_count)
+        pull_request_gauge.labels(
+            {'repo': repo.name}).set(len(tuple(repo.get_pulls())))
+
+
+if __name__ == '__main__':
+    import os
+    import sys
+
+    pkg = 'snappy-kpi-scripts'
+    name = os.path.basename(sys.argv[0])
+    config = get_config(pkg, name)
+
+    ubuntu = get_github_orgs(config)
+    registry = CollectorRegistry()
+    try:
+        set_gauges(registry, ubuntu)
+    finally:
+        # If the setting of gauges failed for any reason, 
+        # just push empty data
+        push_to_gateway(config['push-gateway'],
+                        job='github-repo-data', registry=registry)

@@ -1,0 +1,129 @@
+#!/usr/bin/env python
+
+import os
+import requests
+import time
+import lxml.html
+from lxml.cssselect import CSSSelector
+from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+
+BASE_URL = 'https://github.com'
+SEARCH_URL = '/search?q=filename%3Asnapcraft.yaml+language%3AYAML&s=indexed'
+LOOP_DELAY = 12  # Max. 6 req/min.
+EXCLUDED_OWNERS = ('snapcore', 'ubuntu', 'CanonicalLtd')
+
+
+def get_config(pkg, name):
+    """
+    Get configuration options for this script
+    """
+    import configparser
+
+    config = configparser.SafeConfigParser()
+    conffiles = [
+        '/etc/{}.ini'.format(pkg),
+        os.path.expanduser('~/.{}.ini'.format(pkg)),
+        '{}.ini'.format(pkg),
+    ]
+    config.read(conffiles)
+    return config[name]
+
+
+def is_excluded(repo_url):
+    return any(repo_url.startswith('/' + owner + '/')
+                for owner in EXCLUDED_OWNERS)
+
+
+def get_github_session(username, password):
+    session = requests.session()
+    r = session.get('https://github.com/login')
+    r.raise_for_status()
+    tree = lxml.html.fromstring(r.text)
+    sel = CSSSelector('input[name="authenticity_token"]')
+    token = sel(tree)[0].value
+    data = dict(login=username, password=password, authenticity_token=token)
+    r = session.post('https://github.com/session', data=data)
+    r.raise_for_status()
+    return session
+
+
+def logout_github_session(session):
+    r = session.get('https://github.com/logout')
+    tree = lxml.html.fromstring(r.text)
+    sel = CSSSelector('input[name="authenticity_token"]')
+    token = sel(tree)[0].value
+    data = dict(authenticity_token=token)
+    r = session.post('https://github.com/logout', data=data)
+
+
+def crawl_github(session, base, starting_page):
+    page = base + starting_page
+    final_results = []
+    r = session.get(page)
+    r.raise_for_status()
+    tree = lxml.html.fromstring(r.text)
+    sel = CSSSelector('.codesearch-aside .menu-item.selected span.counter')
+    elements = sel(tree)
+    if len(elements) != 1:
+        raise LookupError(
+            'Script should only return one total value: {}'.format(
+                ' '.join(x.text for x in elements)))
+
+    while page:
+        r = session.get(page)
+        r.raise_for_status()
+        tree = lxml.html.fromstring(r.text)
+        sel = CSSSelector('.code-list-item p.title a')
+        results = sel(tree)
+
+        for x in results[::2]:
+            # "<a>user/repo</a> - <a>snapcraft.yaml</a>" - thus the step of 2
+            final_results.append(x.get('href'))
+
+        # Check for another page.
+        sel = CSSSelector('a.next_page')
+        try:
+            page = sel(tree)[0].get('href')
+            # There are more pages left.
+            page = base + page
+        except IndexError:
+            break
+
+        # Don't be greedy.
+        time.sleep(LOOP_DELAY)
+
+    expected_len = int(elements[0].text.replace(',', ''))
+    # Github caps results to 100 pages with 10 repos each
+    if expected_len > 1000:
+        expected_len = 1000
+    actual_len = len(final_results)
+    assert expected_len == actual_len, "length of result list ({}) does not match that reported by github ({})".format(actual_len, expected_len)
+    return final_results
+
+
+def main(config, base, starting_page):
+    registry = CollectorRegistry()
+    session = get_github_session(config['github-username'], config['github-password'])
+    try:
+        final_results = crawl_github(session, base, starting_page)
+        # Exclude snappy-playpen and other Canonical projects.
+        final_results = [repo for repo in final_results if not is_excluded(repo)]
+
+        files_gauge = Gauge('github_snapcraft_yaml_files',
+                            'snapcraft_yaml_count', registry=registry)
+        repos_gauge = Gauge('github_snapcraft_yaml_repos',
+                            'snapcraft_yaml_repo_count', registry=registry)
+        files_gauge.set(len(final_results))
+        repos_gauge.set(len(set(final_results)))
+    finally:
+        push_to_gateway('push.snappy.kpi.internal:9091',
+                        job='github-search-data', registry=registry)
+        logout_github_session(session)
+
+
+if __name__ == '__main__':
+
+    pkg = 'snappy-kpi-scripts'
+    config = get_config(pkg, 'github')
+
+    main(config, BASE_URL, SEARCH_URL)
