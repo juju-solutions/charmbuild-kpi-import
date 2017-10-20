@@ -1,4 +1,4 @@
-# This file is managed by the juju snappy-kpi-scripts charm.
+# This file is managed by the juju charmbuild-kpi-import charm.
 # Please do not edit here.
 
 1 * * * * {{user}} /bin/run-parts --verbose {{script_dir}} | logger -t {{script_name}}

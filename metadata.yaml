@@ -1,13 +1,15 @@
-name: snappy-kpi-scripts
-summary: Scripts to gather snappy KPIs from external sources
+name: charmbuild-kpi-import
+summary: Scripts to gather charm-build KPIs from external sources
 maintainers:
  - Canonical IS <root@admin.canonical.com>
 description: |
-    Scripts to gather snappy KPIs from external sources.
+    Scripts to gather charm-build KPIs from external sources.
 tags:
   - layer
+series:
+  - xenial
 subordinate: true
 requires:
-    juju-info:
+    prometheus:
         scope: container
         interface: juju-info

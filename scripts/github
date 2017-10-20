@@ -1,0 +1,67 @@
+#!/usr/bin/python3
+
+import os
+import sys
+import configparser
+from github import Github
+from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+import pprint
+
+
+def get_config():
+    """
+    Get configuration options for this script
+    """
+    pkg = 'charmbuild-kpi-import'
+    config = configparser.SafeConfigParser()
+    conffiles = [
+        '/etc/{}.ini'.format(pkg),
+        os.path.expanduser('~/.{}.ini'.format(pkg)),
+        '{}.ini'.format(pkg),
+    ]
+    config.read(conffiles)
+    return config['DEFAULT']
+
+
+def gather_issues(config, registry):
+    gh = Github(config.get('github-token'))
+    repo = gh.get_repo('juju/charm-tools')
+    issues = repo.get_issues(state='all')
+    open_gauge = Gauge(
+        name='github_charmtools_issues_open',
+        documentation='Count of open issues, by label',
+        labelnames=['label'],
+        registry=registry,
+    )
+    closed_gauge = Gauge(
+        name='github_charmtools_issues_closed',
+        documentation='Count of closed issues, by label',
+        labelnames=['label'],
+        registry=registry,
+    )
+
+    for issue in issues:
+        gauge = open_gauge if issue.state == 'open' else closed_gauge
+        if issue.labels:
+            for label in issue.labels:
+                gauge.labels(label.name).inc()
+        else:
+            gauge.labels('(none)').inc()
+
+
+def main():
+    config = get_config()
+    registry = CollectorRegistry()
+
+    gather_issues(config, registry)
+
+    if '--debug' not in sys.argv:
+        push_to_gateway(config['push-gateway'],
+                        job='charmbuild-github',
+                        registry=registry)
+    else:  # Debugging enabled.
+        pprint.pprint([(x.name, x.samples) for x in registry.collect()])
+
+
+if __name__ == '__main__':
+    main()

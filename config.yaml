@@ -1,52 +1,16 @@
 options:
-    http_proxy:
+    google-analytics-view-id:
+        default: ''
+        description: Google Analytics view ID
+        type: string
+    google-analytics-creds:
         default: ''
         description:
-            Address:port of HTTP proxy.
+            Base64-encoded Google Analytics account credentials in JSON format
         type: string
-    https_proxy:
+    github-token:
         default: ''
-        description:
-            Address:port of HTTPS proxy.
-        type: string
-    launchpad-credentials:
-        default: ''
-        description:
-            A base64-encoded file to be used as the launchpad credentials file.
-        type: string
-    launchpad-credentials-file:
-        default: '/home/ubuntu/.snappy-kpi-scripts/launchpad.credentials'
-        description:
-            Where to place the launchpad credentials file.
-            
-            This should be an old-style auth token with a consumer name of
-            snappy-kpi-scripts, not a modern "desktop integration" one, for
-            which use create-launchpad-access-token.py from is-scripts.
-        type: string
-    run-as:
-        default: 'ubuntu'
-        description:
-            User as which to run the scripts
-        type: string
-    github-username:
-        default: ''
-        description: Username for github API
-        type: string
-    github-password:
-        default: ''
-        description: Password for github API
-        type: string
-    ga-dashboard-snapcraft-io-view-id:
-        default: ''
-        description: Google Analytics view ID for dashboard.snapcraft.io
-        type: string
-    ga-dashboard-snapcraft-io-credentials:
-        default: ''
-        description:
-            Base64-encoded Google Analytics account credentials for dashboard.snapcraft.io in JSON format
-        type: string
-    ga-dashboard-snapcraft-io-credentials-file:
-        default: '/home/ubuntu/.snappy-kpi-scripts/ga-dashboard-snapcraft-io.credentials'
-        description:
-            Where to place the Google Analytics credentials file for dashboard.snapcraft.io
+        description: |
+            Auth token to use for GitHub.  If not provided, GitHub API access will be
+            unauthenticated and may run up against rate limits.
         type: string
