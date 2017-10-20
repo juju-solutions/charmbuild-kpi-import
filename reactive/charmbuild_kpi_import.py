@@ -83,7 +83,8 @@ def write_cron_job():
 
 
 @when_all('charmbuild.installed',
-          'config.set.ga-credentials',
+          'config.set.ga-view-id',
+          'config.set.ga-creds',
           'prometheus.available')
 def write_config(prometheus):
     push_gateway = prometheus.private_address()
@@ -97,11 +98,14 @@ def write_config(prometheus):
     active('Configured push gateway %s' % (push_gateway,))
 
 
-@when_not_all('config.set.ga-credentials',
+@when_not_all('config.set.ga-view-id',
+              'config.set.ga-creds',
               'prometheus.available')
 def not_configured():
-    if not is_flag_set('config.set.ga-credentials'):
-        blocked('ga-credentials must be set')
+    if not is_flag_set('config.set.ga-view-id'):
+        blocked('ga-view-id must be set')
+    elif not is_flag_set('config.set.ga-creds'):
+        blocked('ga-creds must be set')
     else:
         blocked('Waiting for push-gateway relation')
 

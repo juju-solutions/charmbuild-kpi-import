@@ -1,9 +1,9 @@
 options:
-    google-analytics-view-id:
+    ga-view-id:
         default: ''
         description: Google Analytics view ID
         type: string
-    google-analytics-creds:
+    ga-creds:
         default: ''
         description:
             Base64-encoded Google Analytics account credentials in JSON format

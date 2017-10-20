@@ -52,7 +52,7 @@ def initialize_analyticsreporting(config):
 
     Returns: analytics an authorized analyticsreporting service object.
     """
-    creds_blob = config['google-analytics-creds']
+    creds_blob = config['ga-creds']
     creds_data = json.loads(base64.b64decode(creds_blob).decode('utf8'))
     scopes = ['https://www.googleapis.com/auth/analytics.readonly']
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_data,
@@ -285,7 +285,7 @@ def main():
     registry = CollectorRegistry()
     analytics = initialize_analyticsreporting(config)
 
-    view_id = config['google-analytics-view-id']
+    view_id = config['ga-view-id']
     gather_users(analytics, view_id, registry)
     gather_charms(analytics, view_id, registry)
     gather_layers(analytics, view_id, registry)
