@@ -141,27 +141,51 @@ def gather_charms(analytics, view_id, registry):
 
 def gather_layers(analytics, view_id, registry):
     gauges = {
-        'layer_fetch': Gauge(
-            name='ga_charmbuild_layer_fetch',
-            documentation='Number of remote builds per layer.',
+        'layer_total_builds': Gauge(
+            name='ga_charmbuild_layer_total_builds',
+            documentation='Total number of builds per layer',
             labelnames=['layer'],
             registry=registry,
         ),
-        'layer_local': Gauge(
-            name='ga_charmbuild_layer_local',
-            documentation='Number of local builds per layer.',
+        'layer_source_builds': Gauge(
+            name='ga_charmbuild_layer_source_builds',
+            documentation='Total number of builds per source (fetch vs local)',
+            labelnames=['source'],
+            registry=registry,
+        ),
+        'layer_local_builds': Gauge(
+            name='ga_charmbuild_layer_local_builds',
+            documentation='Number of local builds per layer',
             labelnames=['layer'],
             registry=registry,
         ),
-        'interface_fetch': Gauge(
-            name='ga_charmbuild_interface_fetch',
-            documentation='Number of remote builds per interface.',
+        'layer_fetch_builds': Gauge(
+            name='ga_charmbuild_layer_fetch_builds',
+            documentation='Number of fetch builds per layer',
+            labelnames=['layer'],
+            registry=registry,
+        ),
+        'interface_total_builds': Gauge(
+            name='ga_charmbuild_interface_total_builds',
+            documentation='Total number of builds per interface',
             labelnames=['interface'],
             registry=registry,
         ),
-        'interface_local': Gauge(
-            name='ga_charmbuild_interface_local',
-            documentation='Number of local builds per interface.',
+        'interface_source_builds': Gauge(
+            name='ga_charmbuild_interface_source_builds',
+            documentation='Total number of builds per source (fetch vs local)',
+            labelnames=['source'],
+            registry=registry,
+        ),
+        'interface_local_builds': Gauge(
+            name='ga_charmbuild_interface_local_builds',
+            documentation='Number of local builds per interface',
+            labelnames=['interface'],
+            registry=registry,
+        ),
+        'interface_fetch_builds': Gauge(
+            name='ga_charmbuild_interface_fetch_builds',
+            documentation='Number of fetch builds per interface',
             labelnames=['interface'],
             registry=registry,
         ),
@@ -199,10 +223,17 @@ def gather_layers(analytics, view_id, registry):
     for row in data['reports'][0]['data']['rows']:
         layer_type = row['dimensions'][0]
         layer_name = row['dimensions'][1]
-        build_type = row['dimensions'][2]
-        build_count = row['metrics'][0]['values'][0]
-        gauge = gauges['{}_{}'.format(layer_type, build_type)]
-        gauge.labels(layer_name).set(build_count)
+        build_source = row['dimensions'][2]
+        build_count = int(row['metrics'][0]['values'][0])
+
+        total_gauge = gauges['{}_total_builds'.format(layer_type)]
+        source_gauge = gauges['{}_source_builds'.format(layer_type)]
+        by_source_gauge = gauges['{}_{}_builds'.format(layer_type,
+                                                       build_source)]
+
+        total_gauge.labels(layer_name).inc(build_count)
+        source_gauge.labels(build_source).inc(build_count)
+        by_source_gauge.labels(layer_name).set(build_count)
 
 
 def gather_series(analytics, view_id, registry):
